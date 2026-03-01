@@ -5,6 +5,16 @@ All notable changes to the AI Assistant plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-03-01
+
+### Changed
+- Replaced custom markdown parser with [marked.js v1.2.9](https://github.com/markedjs/marked) (MIT License), inlined as a self-contained UMD bundle with a Qt Rich Text-compatible custom renderer
+- Proper handling of all standard GFM constructs: nested lists, loose list items, setext headings, link definitions, strikethrough, task lists, and more
+
+### Fixed
+- Code blocks and blockquotes inside ordered list items no longer cause numbering to reset; code block tables are hoisted outside `<li>` elements using `<ol start="N">` segments to avoid Qt list-item indentation
+- Code block content indentation from being inside a list item is now correctly stripped by marked's built-in fence indentation compensation
+
 ## [1.3.3] - 2026-03-01
 
 ### Fixed
