@@ -26,6 +26,8 @@ Item {
     property int maxStoredMessages: 50
 
     property ListModel messagesModel: ListModel {}
+    property ListModel chatsModel: ListModel {}
+    property string activeChatId: ""
     property int messageCount: messagesModel.count
     property bool isStreaming: false
     property bool isOnline: false
@@ -44,7 +46,7 @@ Item {
     property int timeout: 30
     property string apiKey: ""
     property bool saveApiKey: false
-    property string sessionApiKey: "" // In-memory key
+    property string sessionApiKey: ""
     property string apiKeyEnvVar: ""
     property bool useMonospace: false
 
@@ -53,6 +55,8 @@ Item {
     onProviderChanged: handleConfigChanged()
     onBaseUrlChanged: handleConfigChanged()
     onModelChanged: handleConfigChanged()
+
+    // ── Provider defaults ──────────────────────────────────────────
 
     function defaultsForProvider(id) {
         switch (id) {
@@ -112,9 +116,9 @@ Item {
             apiKey: String(p.apiKey || "").trim(),
             saveApiKey: !!p.saveApiKey,
             apiKeyEnvVar: String(p.apiKeyEnvVar || "").trim(),
-            temperature: (typeof p.temperature === "number") ? p.temperature : defaults.temperature,
-            maxTokens: (typeof p.maxTokens === "number") ? p.maxTokens : defaults.maxTokens,
-            timeout: (typeof p.timeout === "number") ? p.timeout : defaults.timeout
+            temperature: typeof p.temperature === "number" ? p.temperature : defaults.temperature,
+            maxTokens: typeof p.maxTokens === "number" ? p.maxTokens : defaults.maxTokens,
+            timeout: typeof p.timeout === "number" ? p.timeout : defaults.timeout
         };
     }
 
@@ -125,10 +129,8 @@ Item {
             gemini: normalizedProfile("gemini", null),
             custom: normalizedProfile("custom", null)
         };
-
         if (!rawProviders || typeof rawProviders !== "object")
             return base;
-
         const ids = ["openai", "anthropic", "gemini", "custom"];
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i];
@@ -140,23 +142,25 @@ Item {
     }
 
     function syncLegacySnapshot(activeProfile) {
-        PluginService.savePluginData(pluginId, "provider", provider)
-        PluginService.savePluginData(pluginId, "baseUrl", activeProfile.baseUrl)
-        PluginService.savePluginData(pluginId, "model", activeProfile.model)
-        PluginService.savePluginData(pluginId, "apiKey", activeProfile.apiKey)
-        PluginService.savePluginData(pluginId, "saveApiKey", activeProfile.saveApiKey)
-        PluginService.savePluginData(pluginId, "apiKeyEnvVar", activeProfile.apiKeyEnvVar)
-        PluginService.savePluginData(pluginId, "temperature", activeProfile.temperature)
-        PluginService.savePluginData(pluginId, "maxTokens", activeProfile.maxTokens)
-        PluginService.savePluginData(pluginId, "timeout", activeProfile.timeout)
+        PluginService.savePluginData(pluginId, "provider", provider);
+        PluginService.savePluginData(pluginId, "baseUrl", activeProfile.baseUrl);
+        PluginService.savePluginData(pluginId, "model", activeProfile.model);
+        PluginService.savePluginData(pluginId, "apiKey", activeProfile.apiKey);
+        PluginService.savePluginData(pluginId, "saveApiKey", activeProfile.saveApiKey);
+        PluginService.savePluginData(pluginId, "apiKeyEnvVar", activeProfile.apiKeyEnvVar);
+        PluginService.savePluginData(pluginId, "temperature", activeProfile.temperature);
+        PluginService.savePluginData(pluginId, "maxTokens", activeProfile.maxTokens);
+        PluginService.savePluginData(pluginId, "timeout", activeProfile.timeout);
     }
 
+    // ── Settings load ──────────────────────────────────────────────
+
     function loadSettings() {
-        suppressConfigChange = true
-        const selectedProvider = String(PluginService.loadPluginData(pluginId, "provider", "openai")).trim() || "openai"
-        const providerId = ["openai", "anthropic", "gemini", "custom"].includes(selectedProvider) ? selectedProvider : "openai"
-        const rawProviders = PluginService.loadPluginData(pluginId, "providers", null)
-        let nextProviders = mergedProviders(rawProviders)
+        suppressConfigChange = true;
+        const selectedProvider = String(PluginService.loadPluginData(pluginId, "provider", "openai")).trim() || "openai";
+        const providerId = ["openai", "anthropic", "gemini", "custom"].includes(selectedProvider) ? selectedProvider : "openai";
+        const rawProviders = PluginService.loadPluginData(pluginId, "providers", null);
+        let nextProviders = mergedProviders(rawProviders);
 
         if (!rawProviders || typeof rawProviders !== "object") {
             const legacyProfile = {
@@ -168,36 +172,37 @@ Item {
                 apiKey: String(PluginService.loadPluginData(pluginId, "apiKey", "")).trim(),
                 saveApiKey: PluginService.loadPluginData(pluginId, "saveApiKey", false),
                 apiKeyEnvVar: String(PluginService.loadPluginData(pluginId, "apiKeyEnvVar", "")).trim()
-            }
-            nextProviders[providerId] = normalizedProfile(providerId, legacyProfile)
-            PluginService.savePluginData(pluginId, "providers", nextProviders)
-            syncLegacySnapshot(nextProviders[providerId])
+            };
+            nextProviders[providerId] = normalizedProfile(providerId, legacyProfile);
+            PluginService.savePluginData(pluginId, "providers", nextProviders);
+            syncLegacySnapshot(nextProviders[providerId]);
         }
 
-        providers = nextProviders
-        provider = providerId
+        providers = nextProviders;
+        provider = providerId;
 
-        const active = providers[provider] || normalizedProfile(provider, null)
-        baseUrl = active.baseUrl
-        model = active.model
-        temperature = active.temperature
-        maxTokens = active.maxTokens
-        timeout = active.timeout
-        apiKey = active.apiKey
-        saveApiKey = active.saveApiKey
-        apiKeyEnvVar = active.apiKeyEnvVar
-        useMonospace = PluginService.loadPluginData(pluginId, "useMonospace", false)
-        suppressConfigChange = false
+        const active = providers[provider] || normalizedProfile(provider, null);
+        baseUrl = active.baseUrl;
+        model = active.model;
+        temperature = active.temperature;
+        maxTokens = active.maxTokens;
+        timeout = active.timeout;
+        apiKey = active.apiKey;
+        saveApiKey = active.saveApiKey;
+        apiKeyEnvVar = active.apiKeyEnvVar;
+        useMonospace = PluginService.loadPluginData(pluginId, "useMonospace", false);
+        suppressConfigChange = false;
 
         const currentHash = computeConfigHash();
         if (providerConfigHash !== currentHash)
-            switchConfigHistory(currentHash)
+            switchConfigHistory(currentHash);
     }
 
     Connections {
         target: PluginService
         function onPluginDataChanged(pId) {
-            if (pId !== root.pluginId) return;
+            if (pId !== root.pluginId)
+                return;
             loadSettings();
         }
     }
@@ -206,7 +211,7 @@ Item {
         id: mkdirProcess
         command: ["mkdir", "-p", root.baseDir]
         running: false
-        onExited: (code) => {
+        onExited: code => {
             if (code === 0 && !sessionLoaded) {
                 sessionFile.path = sessionPath;
             }
@@ -215,19 +220,54 @@ Item {
 
     FileView {
         id: sessionFile
-        path: "" // Set after mkdir
+        path: ""
         blockWrites: true
         atomicWrites: true
 
         onLoaded: {
             try {
                 const data = JSON.parse(text());
-                if (data.version >= 2 && data.sessions && typeof data.sessions === "object") {
+                if (data.version >= 3 && data.sessions && typeof data.sessions === "object") {
+                    // v3 native format
                     sessionsByConfig = data.sessions;
+                } else if (data.version >= 2 && data.sessions && typeof data.sessions === "object") {
+                    // Migrate v2 → v3: each config had a
+                    // flat message array, wrap into a single
+                    // chat per config.
+                    const migrated = {};
+                    const keys = Object.keys(data.sessions);
+                    for (let i = 0; i < keys.length; i++) {
+                        const k = keys[i];
+                        const msgs = Array.isArray(data.sessions[k]) ? data.sessions[k] : [];
+                        const chatId = "chat-migrated";
+                        const chatName = autoNameFromMessages(msgs) || "Migrated chat";
+                        migrated[k] = {
+                            chats: {},
+                            activeChatId: chatId
+                        };
+                        migrated[k].chats[chatId] = {
+                            name: chatName,
+                            createdAt: Date.now(),
+                            messages: msgs
+                        };
+                    }
+                    sessionsByConfig = migrated;
                 } else {
+                    // Very old format: single message array
                     const legacyHash = data.providerConfigHash || computeConfigHash();
+                    const msgs = Array.isArray(data.messages) ? data.messages : [];
+                    const chatId = "chat-migrated";
+                    const chatName = autoNameFromMessages(msgs) || "Migrated chat";
                     sessionsByConfig = {};
-                    sessionsByConfig[legacyHash] = Array.isArray(data.messages) ? data.messages : [];
+                    sessionsByConfig[legacyHash] = {
+                        chats: {},
+                        activeChatId: chatId
+                    };
+                    sessionsByConfig[legacyHash].chats[chatId] = {
+                        name: chatName,
+                        createdAt: Date.now(),
+                        messages: msgs
+                    };
                 }
             } catch (e) {
                 sessionsByConfig = {};
@@ -244,13 +284,42 @@ Item {
         }
     }
 
+    // ── Config hash & history switching ────────────────────────────
+
     function computeConfigHash() {
         return provider + "|" + baseUrl + "|" + model;
     }
 
-    function persistCurrentMessagesForHash(configHash) {
-        if (!configHash)
+    function getConfigSession(configHash) {
+        if (sessionsByConfig && sessionsByConfig[configHash] && typeof sessionsByConfig[configHash] === "object" && sessionsByConfig[configHash].chats) {
+            return sessionsByConfig[configHash];
+        }
+        return {
+            chats: {},
+            activeChatId: ""
+        };
+    }
+
+    function ensureConfigSession(configHash) {
+        if (!sessionsByConfig)
+            sessionsByConfig = {};
+        if (!sessionsByConfig[configHash] || typeof sessionsByConfig[configHash] !== "object" || !sessionsByConfig[configHash].chats) {
+            const next = Object.assign({}, sessionsByConfig);
+            next[configHash] = {
+                chats: {},
+                activeChatId: ""
+            };
+            sessionsByConfig = next;
+        }
+        return sessionsByConfig[configHash];
+    }
+
+    function persistCurrentMessagesForChat() {
+        const configHash = providerConfigHash || computeConfigHash();
+        const chatId = activeChatId;
+        if (!configHash || !chatId)
             return;
+
         const msgs = [];
         for (let i = 0; i < messagesModel.count; i++) {
             const m = messagesModel.get(i);
@@ -265,9 +334,30 @@ Item {
             }
         }
         const capped = msgs.length > maxStoredMessages ? msgs.slice(msgs.length - maxStoredMessages) : msgs;
-        const nextSessions = Object.assign({}, sessionsByConfig || {});
-        nextSessions[configHash] = capped;
-        sessionsByConfig = nextSessions;
+
+        const next = Object.assign({}, sessionsByConfig);
+        const session = next[configHash] || {
+            chats: {},
+            activeChatId: chatId
+        };
+        const chats = Object.assign({}, session.chats);
+
+        if (chats[chatId]) {
+            chats[chatId] = Object.assign({}, chats[chatId], {
+                messages: capped
+            });
+        } else {
+            chats[chatId] = {
+                name: autoNameFromMessages(capped) || "New chat",
+                createdAt: Date.now(),
+                messages: capped
+            };
+        }
+
+        session.chats = chats;
+        session.activeChatId = chatId;
+        next[configHash] = session;
+        sessionsByConfig = next;
     }
 
     function switchConfigHistory(nextHash) {
@@ -276,11 +366,31 @@ Item {
 
         const previousHash = providerConfigHash;
         if (previousHash && previousHash !== nextHash)
-            persistCurrentMessagesForHash(previousHash)
+            persistCurrentMessagesForChat();
 
         providerConfigHash = nextHash;
-        const nextMessages = (sessionsByConfig && Array.isArray(sessionsByConfig[nextHash])) ? sessionsByConfig[nextHash] : [];
-        loadMessages(nextMessages);
+        const session = getConfigSession(nextHash);
+        let targetChatId = session.activeChatId || "";
+
+        // If target chat doesn't exist or is empty,
+        // pick first available or create new
+        if (!targetChatId || !session.chats[targetChatId]) {
+            const chatIds = Object.keys(session.chats || {});
+            targetChatId = chatIds.length > 0 ? chatIds[0] : "";
+        }
+
+        if (targetChatId && session.chats[targetChatId]) {
+            activeChatId = targetChatId;
+            loadMessages(session.chats[targetChatId].messages || []);
+        } else {
+            // No chats exist yet — create one
+            const newId = createNewChatInternal(nextHash);
+            activeChatId = newId;
+            messagesModel.clear();
+            lastUserText = "";
+        }
+
+        refreshChatsModel();
         saveSession();
     }
 
@@ -289,12 +399,192 @@ Item {
             return;
         const current = computeConfigHash();
         if (providerConfigHash && providerConfigHash !== current) {
-            switchConfigHistory(current)
+            switchConfigHistory(current);
         } else {
             providerConfigHash = current;
             saveSession();
         }
     }
+
+    // ── Multi-chat management ──────────────────────────────────────
+
+    function createNewChatInternal(configHash) {
+        const chatId = "chat-" + Date.now();
+        const next = Object.assign({}, sessionsByConfig);
+        const session = next[configHash] || {
+            chats: {},
+            activeChatId: ""
+        };
+        const chats = Object.assign({}, session.chats);
+        chats[chatId] = {
+            name: "New chat",
+            createdAt: Date.now(),
+            messages: []
+        };
+        session.chats = chats;
+        session.activeChatId = chatId;
+        next[configHash] = session;
+        sessionsByConfig = next;
+        return chatId;
+    }
+
+    function createNewChat() {
+        if (isStreaming && chatFetcher.running)
+            return;
+
+        persistCurrentMessagesForChat();
+        const configHash = providerConfigHash || computeConfigHash();
+        const newId = createNewChatInternal(configHash);
+
+        activeChatId = newId;
+        messagesModel.clear();
+        lastUserText = "";
+        isStreaming = false;
+        activeStreamId = "";
+        streamStartedAtMs = 0;
+
+        refreshChatsModel();
+        saveSession();
+    }
+
+    function switchChat(chatId) {
+        if (!chatId || chatId === activeChatId)
+            return;
+        if (isStreaming && chatFetcher.running)
+            return;
+
+        persistCurrentMessagesForChat();
+
+        const configHash = providerConfigHash || computeConfigHash();
+        const session = getConfigSession(configHash);
+        const chat = session.chats ? session.chats[chatId] : null;
+        if (!chat)
+            return;
+
+        // Update activeChatId in session
+        const next = Object.assign({}, sessionsByConfig);
+        if (next[configHash])
+            next[configHash].activeChatId = chatId;
+        sessionsByConfig = next;
+
+        activeChatId = chatId;
+        isStreaming = false;
+        activeStreamId = "";
+        streamStartedAtMs = 0;
+        loadMessages(chat.messages || []);
+
+        refreshChatsModel();
+        saveSession();
+    }
+
+    function deleteChat(chatId) {
+        if (!chatId)
+            return;
+        if (isStreaming && chatFetcher.running && chatId === activeChatId)
+            return;
+
+        const configHash = providerConfigHash || computeConfigHash();
+        const next = Object.assign({}, sessionsByConfig);
+        const session = next[configHash];
+        if (!session || !session.chats || !session.chats[chatId])
+            return;
+
+        const chats = Object.assign({}, session.chats);
+        delete chats[chatId];
+        session.chats = chats;
+
+        const remainingIds = Object.keys(chats);
+
+        if (chatId === activeChatId) {
+            // Switch to another chat or create a new one
+            if (remainingIds.length > 0) {
+                const switchTo = remainingIds[0];
+                session.activeChatId = switchTo;
+                activeChatId = switchTo;
+                loadMessages(chats[switchTo].messages || []);
+            } else {
+                const newId = createNewChatInternal(configHash);
+                activeChatId = newId;
+                messagesModel.clear();
+                lastUserText = "";
+            }
+            isStreaming = false;
+            activeStreamId = "";
+            streamStartedAtMs = 0;
+        } else {
+            if (remainingIds.length === 0) {
+                const newId = createNewChatInternal(configHash);
+                activeChatId = newId;
+                messagesModel.clear();
+                lastUserText = "";
+            }
+        }
+
+        next[configHash] = session;
+        sessionsByConfig = next;
+        refreshChatsModel();
+        saveSession();
+    }
+
+    function renameChat(chatId, newName) {
+        if (!chatId || !newName)
+            return;
+        const configHash = providerConfigHash || computeConfigHash();
+        const next = Object.assign({}, sessionsByConfig);
+        const session = next[configHash];
+        if (!session || !session.chats || !session.chats[chatId])
+            return;
+
+        const chats = Object.assign({}, session.chats);
+        chats[chatId] = Object.assign({}, chats[chatId], {
+            name: newName.trim()
+        });
+        session.chats = chats;
+        next[configHash] = session;
+        sessionsByConfig = next;
+
+        refreshChatsModel();
+        saveSession();
+    }
+
+    function autoNameFromMessages(msgs) {
+        if (!Array.isArray(msgs))
+            return "";
+        for (let i = 0; i < msgs.length; i++) {
+            if (msgs[i] && msgs[i].role === "user" && (msgs[i].content || "").trim().length > 0) {
+                const text = msgs[i].content.trim();
+                return text.length > 40 ? text.substring(0, 40) + "…" : text;
+            }
+        }
+        return "";
+    }
+
+    function refreshChatsModel() {
+        chatsModel.clear();
+        const configHash = providerConfigHash || computeConfigHash();
+        const session = getConfigSession(configHash);
+        const chats = session.chats || {};
+        const ids = Object.keys(chats);
+
+        // Sort by createdAt descending (newest first)
+        ids.sort(function (a, b) {
+            return ((chats[b].createdAt || 0) - (chats[a].createdAt || 0));
+        });
+
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            const chat = chats[id];
+            chatsModel.append({
+                chatId: id,
+                name: chat.name || "New chat",
+                createdAt: chat.createdAt || 0,
+                messageCount: (chat.messages || []).length,
+                isActive: id === activeChatId
+            });
+        }
+    }
+
+    // ── Messages ───────────────────────────────────────────────────
 
     function loadMessages(msgs) {
         messagesModel.clear();
@@ -306,7 +596,7 @@ Item {
                 role: m.role,
                 content: m.content,
                 timestamp: m.timestamp || Date.now(),
-                id: m.id || (m.role + "-" + Date.now() + "-" + i),
+                id: m.id || m.role + "-" + Date.now() + "-" + i,
                 status: m.status || "ok"
             });
         }
@@ -314,14 +604,14 @@ Item {
     }
 
     function saveSession() {
-        const currentHash = providerConfigHash || computeConfigHash();
-        persistCurrentMessagesForHash(currentHash)
+        persistCurrentMessagesForChat();
 
         if (!sessionLoaded || !sessionFile.path)
             return;
 
+        const currentHash = providerConfigHash || computeConfigHash();
         const data = {
-            version: 2,
+            version: 3,
             providerConfigHash: currentHash,
             sessions: sessionsByConfig || {}
         };
@@ -339,51 +629,54 @@ Item {
             saveSession();
     }
 
+    // ── API key resolution ─────────────────────────────────────────
+
     function resolveApiKey() {
         const p = provider;
 
         function scopedEnv(id) {
             switch (id) {
             case "anthropic":
-                return Quickshell.env("DMS_ANTHROPIC_API_KEY") || "";
+                return (Quickshell.env("DMS_ANTHROPIC_API_KEY") || "");
             case "gemini":
-                return Quickshell.env("DMS_GEMINI_API_KEY") || "";
+                return (Quickshell.env("DMS_GEMINI_API_KEY") || "");
             case "custom":
-                return Quickshell.env("DMS_CUSTOM_API_KEY") || "";
+                return (Quickshell.env("DMS_CUSTOM_API_KEY") || "");
             default:
-                return Quickshell.env("DMS_OPENAI_API_KEY") || "";
+                return (Quickshell.env("DMS_OPENAI_API_KEY") || "");
             }
         }
 
         function commonEnv(id) {
             switch (id) {
             case "anthropic":
-                return Quickshell.env("ANTHROPIC_API_KEY") || "";
+                return (Quickshell.env("ANTHROPIC_API_KEY") || "");
             case "gemini":
-                return Quickshell.env("GEMINI_API_KEY") || "";
+                return (Quickshell.env("GEMINI_API_KEY") || "");
             case "custom":
                 return "";
             default:
-                return Quickshell.env("OPENAI_API_KEY") || "";
+                return (Quickshell.env("OPENAI_API_KEY") || "");
             }
         }
 
-        // Use local properties instead of SettingsData
         const sKey = sessionApiKey || "";
-        const svKey = saveApiKey ? (apiKey || "") : "";
+        const svKey = saveApiKey ? apiKey || "" : "";
         const customEnvName = (apiKeyEnvVar || "").trim();
-        const customEnv = customEnvName ? (Quickshell.env(customEnvName) || "") : "";
+        const customEnv = customEnvName ? Quickshell.env(customEnvName) || "" : "";
         const common = commonEnv(p);
         const scoped = scopedEnv(p);
 
-        return sKey || svKey || customEnv || common || scoped || "";
+        return (sKey || svKey || customEnv || common || scoped || "");
     }
+
+    // ── Sending / streaming ────────────────────────────────────────
 
     function sendMessage(text) {
         if (!text || text.trim().length === 0)
             return;
         if (isStreaming && chatFetcher.running) {
-            markError(activeStreamId, "Please wait until the current response finishes.");
+            markError(activeStreamId, "Please wait until the current response " + "finishes.");
             return;
         }
         startStreaming(text.trim(), true);
@@ -439,11 +732,27 @@ Item {
         const streamId = "assistant-" + now;
 
         if (addUser) {
-            messagesModel.append({ role: "user", content: text, timestamp: now, id: "user-" + now, status: "ok" });
+            messagesModel.append({
+                role: "user",
+                content: text,
+                timestamp: now,
+                id: "user-" + now,
+                status: "ok"
+            });
             lastUserText = text;
+
+            // Auto-name the chat from the first user
+            // message if still "New chat"
+            autoNameCurrentChat(text);
         }
 
-        messagesModel.append({ role: "assistant", content: "", timestamp: now + 1, id: streamId, status: "streaming" });
+        messagesModel.append({
+            role: "assistant",
+            content: "",
+            timestamp: now + 1,
+            id: streamId,
+            status: "streaming"
+        });
         activeStreamId = streamId;
         isStreaming = true;
         streamStartedAtMs = now;
@@ -451,6 +760,7 @@ Item {
 
         const payload = buildPayload(text);
         const curlCmd = buildCurlCommand(payload);
+        console.info(curlCmd);
         if (!curlCmd) {
             markError(streamId, "No API key or provider configuration.");
             return;
@@ -461,6 +771,21 @@ Item {
         chatFetcher.command = curlCmd;
         chatFetcher.running = true;
         saveSession();
+    }
+
+    function autoNameCurrentChat(userText) {
+        if (!activeChatId)
+            return;
+        const configHash = providerConfigHash || computeConfigHash();
+        const session = getConfigSession(configHash);
+        const chat = session.chats ? session.chats[activeChatId] : null;
+        if (!chat)
+            return;
+        // Only auto-name if it's still the default name
+        if (chat.name !== "New chat")
+            return;
+        const name = userText.trim().length > 40 ? userText.trim().substring(0, 40) + "…" : userText.trim();
+        renameChat(activeChatId, name);
     }
 
     function cancel() {
@@ -528,10 +853,13 @@ Item {
         if (debugEnabled) {
             const text = getMessageContentById(streamId);
             const preview = (text || "").replace(/\s+/g, " ").slice(0, 300);
-            console.log("[AIAssistantService] response finalized chars=", (text || "").length, "preview=", preview);
+            console.log("[AIAssistantService] response finalized" + " chars=", (text || "").length, "preview=", preview);
         }
         saveSession();
+        refreshChatsModel();
     }
+
+    // ── Payload / curl ─────────────────────────────────────────────
 
     function buildPayload(latestText) {
         const msgs = [];
@@ -548,12 +876,18 @@ Item {
 
             if (!needUser) {
                 if (m.role === "assistant" && m.content && m.content.trim().length > 0) {
-                    msgs.unshift({ role: "assistant", content: m.content });
+                    msgs.unshift({
+                        role: "assistant",
+                        content: m.content
+                    });
                     needUser = true;
                 }
             } else {
                 if (m.role === "user" && m.content && m.content.trim().length > 0) {
-                    msgs.unshift({ role: "user", content: m.content });
+                    msgs.unshift({
+                        role: "user",
+                        content: m.content
+                    });
                     needUser = false;
                     turns++;
                     if (turns >= maxTurns)
@@ -562,7 +896,10 @@ Item {
             }
         }
 
-        msgs.push({ role: "user", content: latestText });
+        msgs.push({
+            role: "user",
+            content: latestText
+        });
         return {
             provider: provider,
             baseUrl: baseUrl,
@@ -583,13 +920,14 @@ Item {
         const req = AIApiAdapters.buildRequest(provider, payload, key);
         if (debugEnabled && req) {
             const redactedUrl = (req.url || "").replace(key, "[REDACTED]");
-            const bodyPreview = (req.body || "");
             console.log("[AIAssistantService] request provider=", provider, "url=", redactedUrl);
-            console.log("[AIAssistantService] request body(preview)=", bodyPreview.slice(0, 800));
+            console.log("[AIAssistantService] request body" + "(preview)=", (req.body || "").slice(0, 800));
         }
 
         return AIApiAdapters.buildCurlCommand(provider, payload, key);
     }
+
+    // ── Stream parsing ─────────────────────────────────────────────
 
     property string streamBuffer: ""
 
@@ -623,6 +961,9 @@ Item {
     function parseProviderDelta(jsonText) {
         try {
             const data = JSON.parse(jsonText);
+            if (debugEnabled) {
+                console.info(provider, jsonText);
+            }
             if (debugEnabled && provider === "gemini") {
                 console.log("[AIAssistantService] gemini chunk:", JSON.stringify(data).slice(0, 200));
             }
@@ -644,17 +985,16 @@ Item {
                             updateStreamContent(activeStreamId, p.text);
                         }
                     });
-                    // Finalize on finishReason OR if we get empty text with metadata (like thoughtSignature)
                     const finishReason = candidate?.finishReason;
                     if (finishReason && finishReason !== "FINISH_REASON_UNSPECIFIED") {
                         finalizeStream(activeStreamId);
                     }
-                    // Also finalize if this chunk has usageMetadata (indicates end of stream)
                     if (chunk.usageMetadata && !hasContent) {
                         finalizeStream(activeStreamId);
                     }
                 });
-            } else { // openai
+            } else {
+                // openai / custom
                 const deltas = data.choices?.[0]?.delta?.content;
                 if (Array.isArray(deltas)) {
                     deltas.forEach(d => {
@@ -664,7 +1004,6 @@ Item {
                 } else if (typeof deltas === "string") {
                     updateStreamContent(activeStreamId, deltas);
                 }
-
                 if (data.choices?.[0]?.finish_reason) {
                     finalizeStream(activeStreamId);
                 }
@@ -702,9 +1041,7 @@ Item {
         }
 
         if (lastHttpStatus >= 400 && isStreaming) {
-            const msg = bodyPreview
-                ? ("Request failed (HTTP " + lastHttpStatus + "): " + bodyPreview)
-                : ("Request failed (HTTP " + lastHttpStatus + ")");
+            const msg = bodyPreview ? "Request failed (HTTP " + lastHttpStatus + "): " + bodyPreview : "Request failed (HTTP " + lastHttpStatus + ")";
             markError(activeStreamId, msg);
             return;
         }
@@ -730,7 +1067,6 @@ Item {
                 }
                 return data.text || "";
             }
-
             if (provider === "gemini") {
                 const chunks = Array.isArray(data) ? data : [data];
                 let out = "";
@@ -743,7 +1079,6 @@ Item {
                 });
                 return out;
             }
-
             const msg = data.choices?.[0]?.message?.content;
             if (typeof msg === "string")
                 return msg;
@@ -764,6 +1099,8 @@ Item {
         }
         return "";
     }
+
+    // ── Curl process ───────────────────────────────────────────────
 
     Process {
         id: chatFetcher

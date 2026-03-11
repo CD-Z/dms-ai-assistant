@@ -3,9 +3,10 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import Quickshell
-import qs.Common
-import qs.Services
 import qs.Widgets
+import qs.Common
+
+//import ChatList
 
 Item {
     id: root
@@ -19,13 +20,15 @@ Item {
         if (!visible) {
             // Force menu teardown when the panel is hidden/toggled off.
             // This avoids stale popup/dropdown internals when reopened.
-            showSettingsMenu = false
-            showOverflowMenu = false
-            showNewChatConfirm = false
+            showSettingsMenu = false;
+            showOverflowMenu = false;
+            showNewChatConfirm = false;
         }
     }
 
     required property var aiService
+    required property bool isExpanded
+    property bool historyOpen: false
     property bool showSettingsMenu: false
     property bool showOverflowMenu: false
     property bool showNewChatConfirm: false
@@ -34,36 +37,36 @@ Item {
     readonly property real panelTransparency: SettingsData.popupTransparency
     readonly property bool hasApiKey: !!(aiService && aiService.resolveApiKey && aiService.resolveApiKey().length > 0)
     readonly property bool hasMessages: (aiService.messageCount ?? 0) > 0
-    readonly property int streamElapsedSeconds: (aiService.isStreaming && (aiService.streamStartedAtMs ?? 0) > 0)
-        ? Math.max(0, Math.floor((nowMs - aiService.streamStartedAtMs) / 1000)) : 0
+    readonly property int streamElapsedSeconds: (aiService.isStreaming && (aiService.streamStartedAtMs ?? 0) > 0) ? Math.max(0, Math.floor((nowMs - aiService.streamStartedAtMs) / 1000)) : 0
     signal hideRequested
+    signal expandRequested(expand: bool)
 
     function showTemporaryHint(text) {
-        transientHint = text || ""
-        hintResetTimer.restart()
+        transientHint = text || "";
+        hintResetTimer.restart();
     }
 
     function openSettingsAndFocusApiKey() {
-        showSettingsMenu = true
+        showSettingsMenu = true;
         Qt.callLater(() => {
-            const panel = settingsPanelLoader.item
+            const panel = settingsPanelLoader.item;
             if (panel && panel.focusApiKeyField)
-                panel.focusApiKeyField()
-        })
+                panel.focusApiKeyField();
+        });
     }
 
     function startNewChat() {
         if (aiService.isStreaming ?? false) {
-            showTemporaryHint(I18n.tr("Stop current response first."))
-            return
+            showTemporaryHint(I18n.tr("Stop current response first."));
+            return;
         }
 
         if ((aiService.messageCount ?? 0) > 0) {
-            showNewChatConfirm = true
-            return
+            showNewChatConfirm = true;
+            return;
         }
 
-        aiService.clearHistory(true)
+        aiService.clearHistory(true);
     }
 
     function sendCurrentMessage() {
@@ -105,18 +108,18 @@ Item {
     }
 
     function privacyNote() {
-        const provider = aiService.provider ?? "openai"
-        const baseUrl = aiService.baseUrl ?? ""
-        const isRemote = provider !== "custom" || (!baseUrl.includes("localhost") && !baseUrl.includes("127.0.0.1"))
+        const provider = aiService.provider ?? "openai";
+        const baseUrl = aiService.baseUrl ?? "";
+        const isRemote = provider !== "custom" || (!baseUrl.includes("localhost") && !baseUrl.includes("127.0.0.1"));
 
         if (isRemote)
-            return I18n.tr("Remote provider (%1): avoid sensitive data.").arg(provider.toUpperCase())
-        return I18n.tr("Local endpoint detected.")
+            return I18n.tr("Remote provider (%1): avoid sensitive data.").arg(provider.toUpperCase());
+        return I18n.tr("Local endpoint detected.");
     }
 
     function prefillPrompt(prompt) {
-        composer.text = prompt
-        composer.forceActiveFocus()
+        composer.text = prompt;
+        composer.forceActiveFocus();
     }
 
     Timer {
@@ -134,19 +137,19 @@ Item {
         onTriggered: transientHint = ""
     }
 
-    Column {
+    ColumnLayout {
         anchors.fill: parent
         spacing: Theme.spacingM
 
         RowLayout {
             id: headerRow
-            width: parent.width
+            Layout.fillWidth: true
             spacing: Theme.spacingS
 
             Rectangle {
                 radius: Theme.cornerRadius
                 color: Theme.surfaceVariant
-                height: Theme.fontSizeSmall * 1.6
+                implicitHeight: Theme.fontSizeSmall * 1.6
                 Layout.preferredWidth: providerLabel.implicitWidth + Theme.spacingM
                 Layout.alignment: Qt.AlignVCenter
 
@@ -160,8 +163,8 @@ Item {
             }
 
             Rectangle {
-                width: 10
-                height: 10
+                implicitWidth: 10
+                implicitHeight: 10
                 radius: 5
                 color: aiService.isOnline ? Theme.success : Theme.surfaceVariantText
                 Layout.alignment: Qt.AlignVCenter
@@ -171,7 +174,7 @@ Item {
                 visible: aiService.isStreaming
                 radius: Theme.cornerRadius
                 color: Theme.surfaceVariant
-                height: Theme.fontSizeSmall * 1.6
+                implicitHeight: Theme.fontSizeSmall * 1.6
                 Layout.preferredWidth: streamingHeaderText.implicitWidth + Theme.spacingM
                 Layout.alignment: Qt.AlignVCenter
 
@@ -188,7 +191,7 @@ Item {
                 visible: !aiService.isStreaming && transientHint.length > 0
                 radius: Theme.cornerRadius
                 color: Theme.surfaceVariant
-                height: Theme.fontSizeSmall * 1.6
+                implicitHeight: Theme.fontSizeSmall * 1.6
                 Layout.preferredWidth: transientHeaderText.implicitWidth + Theme.spacingM
                 Layout.alignment: Qt.AlignVCenter
 
@@ -201,12 +204,8 @@ Item {
                 }
             }
 
-            Item { Layout.fillWidth: true }
-
-            DankActionButton {
-                iconName: "settings"
-                tooltipText: showSettingsMenu ? I18n.tr("Hide settings") : I18n.tr("Settings")
-                onClicked: showSettingsMenu = !showSettingsMenu
+            Item {
+                Layout.fillWidth: true
             }
 
             DankActionButton {
@@ -215,6 +214,17 @@ Item {
                 enabled: !(aiService.isStreaming ?? false)
                 onClicked: startNewChat()
             }
+            DankActionButton {
+                iconName: "side_navigation"
+                tooltipText: "Toggle History"
+                // If the parent slideout is expandable, we show the toggle
+                onClicked: {
+                    if (!root.isExpanded && !root.historyOpen) {
+                        root.expandRequested(true);
+                    }
+                    root.historyOpen = !root.historyOpen;
+                }
+            }
 
             DankActionButton {
                 iconName: "more_vert"
@@ -222,101 +232,139 @@ Item {
                 onClicked: showOverflowMenu = !showOverflowMenu
             }
         }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: Theme.spacingM
 
-        Rectangle {
-            width: parent.width
-            height: parent.height - headerRow.height - composerRow.height - Theme.spacingM * 3
-            radius: Theme.cornerRadius
-            color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, root.panelTransparency)
-            border.color: Theme.surfaceVariantAlpha
-            border.width: 1
+            // --- LEFT PANEL: Messages + Empty State ---
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: Theme.cornerRadius
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, root.panelTransparency)
+                border.color: Theme.surfaceVariantAlpha
+                border.width: 1
+                clip: true
 
-            MessageList {
-                id: list
-                anchors.fill: parent
-                messages: aiService.messagesModel
-                aiService: root.aiService
-                useMonospace: aiService.useMonospace
-                onCopySuccess: showTemporaryHint(I18n.tr("Copied to clipboard."))
-            }
-
-            Column {
-                anchors.centerIn: parent
-                width: parent.width * 0.86
-                spacing: Theme.spacingM
-                visible: !hasMessages
-
-                StyledText {
-                    width: parent.width
-                    text: !hasApiKey
-                        ? I18n.tr("Configure a provider and API key to start chatting.")
-                        : I18n.tr("Start a conversation.")
-                    font.pixelSize: Theme.fontSizeMedium
-                    color: Theme.surfaceText
-                    wrapMode: Text.Wrap
-                    horizontalAlignment: Text.AlignHCenter
+                // Message List (Visible when there are messages)
+                MessageList {
+                    id: list
+                    anchors.fill: parent
+                    visible: hasMessages
+                    messages: aiService.messagesModel
+                    aiService: root.aiService
+                    useMonospace: aiService.useMonospace
+                    onCopySuccess: showTemporaryHint(I18n.tr("Copied to clipboard."))
                 }
 
-                StyledText {
-                    width: parent.width
-                    text: privacyNote()
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.surfaceTextMedium
-                    wrapMode: Text.Wrap
-                    horizontalAlignment: Text.AlignHCenter
-                }
+                // Empty State (Visible when no messages)
+                Column {
+                    anchors.centerIn: parent
+                    width: parent.width * 0.86
+                    spacing: Theme.spacingM
+                    visible: !hasMessages
 
-                Row {
-                    spacing: Theme.spacingS
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    visible: !hasApiKey
-
-                    DankButton {
-                        text: I18n.tr("Open Settings")
-                        iconName: "settings"
-                        onClicked: showSettingsMenu = true
+                    StyledText {
+                        width: parent.width
+                        text: !hasApiKey ? I18n.tr("Configure a provider and API key to start chatting.") : I18n.tr("Start a conversation.")
+                        font.pixelSize: Theme.fontSizeMedium
+                        color: Theme.surfaceText
+                        wrapMode: Text.Wrap
+                        horizontalAlignment: Text.AlignHCenter
                     }
 
-                    DankButton {
-                        text: I18n.tr("Paste API Key")
-                        iconName: "vpn_key"
-                        onClicked: {
-                            openSettingsAndFocusApiKey()
-                            showTemporaryHint(I18n.tr("Press Ctrl+V in the API key field."))
+                    StyledText {
+                        width: parent.width
+                        text: privacyNote()
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceTextMedium
+                        wrapMode: Text.Wrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    Row {
+                        spacing: Theme.spacingS
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        visible: !hasApiKey
+
+                        DankButton {
+                            text: I18n.tr("Open Settings")
+                            iconName: "settings"
+                            onClicked: showSettingsMenu = true
+                        }
+
+                        DankButton {
+                            text: I18n.tr("Paste API Key")
+                            iconName: "vpn_key"
+                            onClicked: {
+                                openSettingsAndFocusApiKey();
+                                showTemporaryHint(I18n.tr("Press Ctrl+V in the API key field."));
+                            }
+                        }
+                    }
+
+                    Flow {
+                        width: parent.width
+                        spacing: Theme.spacingS
+                        visible: hasApiKey
+
+                        DankButton {
+                            text: I18n.tr("Summarize clipboard")
+                            iconName: "summarize"
+                            onClicked: prefillPrompt(I18n.tr("Summarize the clipboard text into concise bullets."))
+                        }
+
+                        DankButton {
+                            text: I18n.tr("Draft reply")
+                            iconName: "edit"
+                            onClicked: prefillPrompt(I18n.tr("Draft a concise, professional reply to this message:"))
+                        }
+
+                        DankButton {
+                            text: I18n.tr("Explain error")
+                            iconName: "bug_report"
+                            onClicked: prefillPrompt(I18n.tr("Explain this error and provide a fix:"))
                         }
                     }
                 }
+            }
 
-                Flow {
-                    width: parent.width
-                    spacing: Theme.spacingS
-                    visible: hasApiKey
+            // --- RIGHT PANEL: Chat List ---
+            Rectangle {
+                Layout.preferredWidth: root.historyOpen ? parent.width * 0.35 : 0
+                Layout.fillHeight: true
 
-                    DankButton {
-                        text: I18n.tr("Summarize clipboard")
-                        iconName: "summarize"
-                        onClicked: prefillPrompt(I18n.tr("Summarize the clipboard text into concise bullets."))
+                opacity: chatComponentRoot.sidebarOpen ? 1 : 0
+                radius: Theme.cornerRadius
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, root.panelTransparency)
+                border.color: Theme.surfaceVariantAlpha
+                border.width: chatComponentRoot.sidebarOpen ? 1 : 0
+                clip: true
+                //visible: root.historyOpen
+
+                Behavior on Layout.preferredWidth {
+                    NumberAnimation {
+                        duration: 300
+                        easing.type: Easing.OutCubic
                     }
-
-                    DankButton {
-                        text: I18n.tr("Draft reply")
-                        iconName: "edit"
-                        onClicked: prefillPrompt(I18n.tr("Draft a concise, professional reply to this message:"))
+                }
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 250
                     }
+                }
 
-                    DankButton {
-                        text: I18n.tr("Explain error")
-                        iconName: "bug_report"
-                        onClicked: prefillPrompt(I18n.tr("Explain this error and provide a fix:"))
-                    }
+                ChatList {
+                    anchors.fill: parent
+                    aiService: root.aiService
                 }
             }
         }
-
         Item {
             id: composerRow
-            width: parent.width
-            height: 116
+            Layout.fillWidth: true
+            Layout.preferredHeight: 116
 
             Rectangle {
                 id: composerContainer
@@ -367,7 +415,9 @@ Item {
                                 id: composer
                                 implicitWidth: scrollView.availableWidth
                                 wrapMode: TextArea.Wrap
-                                background: Rectangle { color: "transparent" }
+                                background: Rectangle {
+                                    color: "transparent"
+                                }
                                 font.pixelSize: Theme.fontSizeMedium
                                 font.family: Theme.fontFamily
                                 font.weight: Theme.fontWeight
@@ -419,7 +469,9 @@ Item {
                         Layout.fillWidth: true
                         spacing: Theme.spacingS
 
-                        Item { Layout.fillWidth: true }
+                        Item {
+                            Layout.fillWidth: true
+                        }
 
                         DankActionButton {
                             iconName: "send"
@@ -441,7 +493,6 @@ Item {
                             iconColor: Theme.error
                             onClicked: aiService.cancel()
                         }
-
                     }
                 }
             }
@@ -488,8 +539,7 @@ Item {
 
             MouseArea {
                 anchors.fill: parent
-                onClicked: {
-                }
+                onClicked: {}
             }
 
             Column {
@@ -505,8 +555,8 @@ Item {
                     iconName: "settings"
                     width: parent.width
                     onClicked: {
-                        showSettingsMenu = !showSettingsMenu
-                        showOverflowMenu = false
+                        showSettingsMenu = !showSettingsMenu;
+                        showOverflowMenu = false;
                     }
                 }
 
@@ -522,8 +572,8 @@ Item {
                     width: parent.width
                     enabled: (aiService.messageCount ?? 0) > 0
                     onClicked: {
-                        copyFullChat()
-                        showOverflowMenu = false
+                        copyFullChat();
+                        showOverflowMenu = false;
                     }
                 }
 
@@ -538,8 +588,8 @@ Item {
                     iconName: "close"
                     width: parent.width
                     onClicked: {
-                        showOverflowMenu = false
-                        root.hideRequested()
+                        showOverflowMenu = false;
+                        root.hideRequested();
                     }
                 }
             }
@@ -550,18 +600,19 @@ Item {
         anchors.fill: parent
         visible: showNewChatConfirm
         focus: showNewChatConfirm
-        onVisibleChanged: if (visible) forceActiveFocus()
+        onVisibleChanged: if (visible)
+            forceActiveFocus()
         onClicked: showNewChatConfirm = false
 
         Keys.enabled: showNewChatConfirm
         Keys.onPressed: event => {
             if (event.key === Qt.Key_Escape) {
-                showNewChatConfirm = false
-                event.accepted = true
+                showNewChatConfirm = false;
+                event.accepted = true;
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                aiService.clearHistory(true)
-                showNewChatConfirm = false
-                event.accepted = true
+                aiService.clearHistory(true);
+                showNewChatConfirm = false;
+                event.accepted = true;
             }
         }
 
@@ -576,8 +627,7 @@ Item {
 
             MouseArea {
                 anchors.fill: parent
-                onClicked: {
-                }
+                onClicked: {}
             }
 
             Column {
@@ -616,8 +666,8 @@ Item {
                         text: I18n.tr("New chat")
                         iconName: "keyboard_return"
                         onClicked: {
-                            aiService.clearHistory(true)
-                            showNewChatConfirm = false
+                            aiService.clearHistory(true);
+                            showNewChatConfirm = false;
                         }
                     }
                 }

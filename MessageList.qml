@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import qs.Common
@@ -9,7 +10,7 @@ Item {
     property var aiService: null
     property bool stickToBottom: true
     property bool useMonospace: false
-    signal copySuccess()
+    signal copySuccess
 
     Component.onCompleted: console.log("[MessageList] ready")
 
@@ -49,7 +50,7 @@ Item {
         model: root.messages
         spacing: Theme.spacingM
         clip: true
-        ScrollBar.vertical: ScrollBar { }
+        ScrollBar.vertical: ScrollBar {}
 
         onContentYChanged: {
             // Use a small tolerance to avoid stickToBottom flipping to false
@@ -75,8 +76,16 @@ Item {
             id: wrapper
             width: listView.width
 
+            // Declare required properties for the roles you need
+            required property int index
+            required property string role
+            required property string content
+            required property string id
+            required property int status
+
+            // Access previousRole using root.messages.get() as you did before
             readonly property string previousRole: (index > 0 && root.messages) ? (root.messages.get(index - 1).role || "") : ""
-            readonly property bool roleChanged: previousRole.length > 0 && previousRole !== (model.role || "")
+            readonly property bool roleChanged: previousRole.length > 0 && previousRole !== role
             readonly property int topGap: roleChanged ? Theme.spacingM : 0
 
             implicitHeight: bubble.implicitHeight + topGap
@@ -85,23 +94,23 @@ Item {
                 id: bubble
                 width: listView.width
                 y: wrapper.topGap
-                messageId: model.id
-                role: model.role
-                text: model.content
-                status: model.status
+                messageId: wrapper.id
+                role: wrapper.role
+                text: wrapper.content
+                status: wrapper.status
                 useMonospace: root.useMonospace
 
                 onCopySuccess: root.copySuccess()
 
                 Component.onCompleted: {
-                    console.log("[MessageList] add", role, text ? text.slice(0, 40) : "")
+                    console.log("[MessageList] add", role, text ? text.slice(0, 40) : "");
                 }
 
                 onRegenerateRequested: messageId => {
-                    if (!aiService || !aiService.regenerateFromMessageId)
+                    if (!root.aiService || !root.aiService.regenerateFromMessageId)
                         return;
                     console.log("[MessageList] regenerate requested for message id", messageId);
-                    aiService.regenerateFromMessageId(messageId);
+                    root.aiService.regenerateFromMessageId(messageId);
                 }
             }
         }
