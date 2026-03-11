@@ -1,0 +1,3 @@
+module aiAssistan.markdown
+plugin DankMarkdown
+classname DankMarkdownPlugin

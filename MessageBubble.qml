@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
 import qs.Common
-import "./markdown2html.js" as Markdown2Html
+import aiAssistan.markdown
 import qs.Widgets
 
 Item {
@@ -14,7 +14,7 @@ Item {
     property string status: "ok" // ok|streaming|error
     property bool useMonospace: false
     signal regenerateRequested(string messageId)
-    signal copySuccess()
+    signal copySuccess
 
     readonly property bool isUser: role === "user"
     readonly property real bubbleMaxWidth: isUser ? Math.max(240, Math.floor(width * 0.82)) : width
@@ -22,16 +22,16 @@ Item {
     readonly property color userBubbleBorder: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.3)
     readonly property color assistantBubbleFill: Theme.surfaceContainer
     readonly property color assistantBubbleBorder: Theme.outline
+    readonly property var segments: useMarkdownRendering ? MarkdownParser.parse(root.text) : []
 
     readonly property var themeColors: ({
-        "codeBg": Theme.surfaceContainerHigh,
-        "blockquoteBg": Theme.withAlpha(Theme.surfaceContainerHighest, 0.5),
-        "blockquoteBorder": Theme.outlineVariant,
-        "inlineCodeBg": Theme.withAlpha(Theme.onSurface, 0.1)
-    })
+            "codeBg": Theme.surfaceContainerHigh,
+            "blockquoteBg": Theme.withAlpha(Theme.surfaceContainerHighest, 0.5),
+            "blockquoteBorder": Theme.outlineVariant,
+            "inlineCodeBg": Theme.withAlpha(Theme.onSurface, 0.1)
+        })
 
     readonly property bool useMarkdownRendering: !isUser && status !== "streaming"
-    readonly property string renderedHtml: Markdown2Html.markdownToHtml(root.text, themeColors)
 
     width: parent ? parent.width : implicitWidth
     implicitHeight: bubble.implicitHeight
@@ -69,7 +69,9 @@ Item {
 
                 // assistant: [icon][chip][spacer][regenerate][copy]
                 // user:      [spacer][chip][icon]
-                Item { Layout.fillWidth: root.isUser }
+                Item {
+                    Layout.fillWidth: root.isUser
+                }
 
                 Rectangle {
                     radius: Theme.cornerRadius
@@ -103,7 +105,9 @@ Item {
                     }
                 }
 
-                Item { Layout.fillWidth: !root.isUser }
+                Item {
+                    Layout.fillWidth: !root.isUser
+                }
 
                 DankActionButton {
                     visible: !root.isUser && root.status === "ok"
@@ -148,44 +152,294 @@ Item {
                 width: parent.width
             }
 
-            TextArea {
-                id: messageText
-                text: root.useMarkdownRendering ? root.renderedHtml : root.text
-                textFormat: root.useMarkdownRendering ? Text.RichText : Text.PlainText
-                wrapMode: Text.Wrap
-                font.pixelSize: Theme.fontSizeMedium
-                font.family: root.useMonospace ? Theme.monoFontFamily : Theme.fontFamily
-                color: status === "error" ? Theme.error : Theme.surfaceText
+            Loader {
                 width: parent.width
+                sourceComponent: root.useMarkdownRendering ? segmentedRenderer : plainRenderer
+            }
 
-                readOnly: true
-                selectByMouse: true
-                selectionColor: Theme.primary
-                selectedTextColor: Theme.onPrimary
-                background: null
-                leftPadding: 4
-                rightPadding: 4
-
-                hoverEnabled: true
-
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.NoButton
-                    cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor
+            Component {
+                id: plainRenderer
+                TextArea {
+                    text: root.text
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    font.pixelSize: Theme.fontSizeMedium
+                    font.family: root.useMonospace ? Theme.monoFontFamily : Theme.fontFamily
+                    color: status === "error" ? Theme.error : Theme.surfaceText
+                    readOnly: true
+                    selectByMouse: true
+                    selectionColor: Theme.primary
+                    selectedTextColor: Theme.onPrimary
+                    background: null
+                    leftPadding: 4
+                    rightPadding: 4
                 }
+            }
 
-                onLinkActivated: link => {
-                    if (link.startsWith("copy://")) {
-                        const b64 = link.substring(7);
-                        try {
-                            const code = Qt.atob(b64);
-                            Quickshell.execDetached(["wl-copy", code]);
-                            root.copySuccess();
-                        } catch (e) {
-                            console.error("[MessageBubble] Failed to copy code:", e);
+            Component {
+                id: segmentedRenderer
+                Column {
+                    width: parent.width
+                    spacing: Theme.spacingS
+
+                    Repeater {
+                        model: root.segments
+
+                        delegate: Loader {
+                            required property var modelData
+                            width: parent.width
+                            sourceComponent: {
+                                switch (modelData.type) {
+                                case "code":
+                                    return codeBlock;
+                                case "table":
+                                    return tableBlock;
+                                default:
+                                    return markdownBlock;
+                                }
+                            }
+
+                            // Pass data into the loaded item
+                            onLoaded: {
+                                item.segmentData = modelData;
+                                item.parentWidth = width;
+                            }
                         }
-                    } else {
-                        Qt.openUrlExternally(link);
+                    }
+                }
+            }
+            Component {
+                id: markdownBlock
+
+                Text {
+                    property var segmentData
+                    property real parentWidth: 0
+
+                    width: parentWidth
+                    text: segmentData ? segmentData.content : ""
+                    textFormat: Text.MarkdownText
+                    wrapMode: Text.Wrap
+                    font.pixelSize: Theme.fontSizeMedium
+                    font.family: Theme.fontFamily
+                    color: Theme.surfaceText
+                }
+            }
+
+            Component {
+                id: codeBlock
+
+                Rectangle {
+                    property var segmentData
+                    property real parentWidth: 0
+
+                    width: parentWidth
+                    implicitHeight: codeColumn.implicitHeight
+                    radius: Theme.cornerRadius
+                    color: Theme.surfaceContainerHigh
+                    border.color: Theme.outline
+                    border.width: 1
+
+                    Column {
+                        id: codeColumn
+                        width: parent.width
+
+                        // Language + copy header
+                        Rectangle {
+                            width: parent.width
+                            height: langLabel.implicitHeight + Theme.spacingXS * 2
+                            color: Theme.withAlpha(Theme.onSurface, 0.06)
+                            radius: Theme.cornerRadius
+                            // Square bottom corners
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: parent.radius
+                                color: parent.color
+                            }
+
+                            RowLayout {
+                                anchors {
+                                    left: parent.left
+                                    right: parent.right
+                                    verticalCenter: parent.verticalCenter
+                                    leftMargin: Theme.spacingS
+                                    rightMargin: Theme.spacingS
+                                }
+
+                                StyledText {
+                                    id: langLabel
+                                    text: segmentData ? segmentData.lang : ""
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                }
+
+                                DankActionButton {
+                                    iconName: "content_copy"
+                                    buttonSize: 20
+                                    iconSize: 12
+                                    backgroundColor: "transparent"
+                                    iconColor: Theme.surfaceVariantText
+                                    tooltipText: I18n.tr("Copy")
+                                    onClicked: {
+                                        if (segmentData) {
+                                            Quickshell.execDetached(["wl-copy", segmentData.content]);
+                                            root.copySuccess();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        TextArea {
+                            width: parent.width
+                            text: segmentData ? segmentData.content : ""
+                            textFormat: Text.PlainText
+                            wrapMode: Text.NoWrap  // horizontal scroll for code
+                            font.pixelSize: Theme.fontSizeMedium
+                            font.family: Theme.monoFontFamily
+                            color: Theme.surfaceText
+                            readOnly: true
+                            selectByMouse: true
+                            selectionColor: Theme.primary
+                            selectedTextColor: Theme.onPrimary
+                            background: null
+                            leftPadding: Theme.spacingS
+                            rightPadding: Theme.spacingS
+                            topPadding: Theme.spacingS
+                            bottomPadding: Theme.spacingS
+
+                            ScrollBar.horizontal: ScrollBar {}
+                        }
+                    }
+                }
+            }
+
+            Component {
+                id: tableBlock
+
+                Rectangle {
+                    property var segmentData
+                    property real parentWidth: 0
+
+                    width: parentWidth
+                    implicitHeight: tableColumn.implicitHeight
+                    radius: Theme.cornerRadius
+                    color: Theme.surfaceContainerHigh
+                    border.color: Theme.outline
+                    border.width: 1
+                    clip: true
+
+                    Column {
+                        id: tableColumn
+                        width: parent.width
+
+                        // Header row
+                        Row {
+                            width: parent.width
+                            readonly property var headers: segmentData ? segmentData.headers : []
+                            readonly property real cellWidth: headers.length > 0 ? Math.floor(width / headers.length) : width
+
+                            Repeater {
+                                model: parent.headers
+                                Rectangle {
+                                    width: parent.cellWidth
+                                    height: headerCell.implicitHeight + Theme.spacingXS * 2
+                                    color: Theme.withAlpha(Theme.onSurface, 0.08)
+
+                                    // Right border between cells
+                                    Rectangle {
+                                        anchors.right: parent.right
+                                        width: 1
+                                        height: parent.height
+                                        color: Theme.outline
+                                        visible: index < parent.parent.headers.length - 1
+                                    }
+
+                                    StyledText {
+                                        id: headerCell
+                                        anchors {
+                                            left: parent.left
+                                            right: parent.right
+                                            verticalCenter: parent.verticalCenter
+                                            leftMargin: Theme.spacingS
+                                            rightMargin: Theme.spacingS
+                                        }
+                                        text: modelData
+                                        font.pixelSize: Theme.fontSizeSmall
+                                        font.weight: Font.Medium
+                                        color: Theme.surfaceText
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                            }
+                        }
+
+                        // Divider
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            color: Theme.outline
+                        }
+
+                        // Data rows
+                        Repeater {
+                            model: segmentData ? segmentData.rows : []
+
+                            Column {
+                                required property var modelData
+                                required property int index
+                                width: parent.width
+
+                                // Row
+                                Row {
+                                    width: parent.width
+                                    readonly property int colCount: segmentData ? segmentData.headers.length : 0
+                                    readonly property real cellWidth: colCount > 0 ? Math.floor(width / colCount) : width
+
+                                    Repeater {
+                                        model: modelData
+                                        Rectangle {
+                                            width: parent.cellWidth
+                                            height: dataCell.implicitHeight + Theme.spacingXS * 2
+                                            // Alternating row tint
+                                            color: (index % 2 === 0) ? "transparent" : Theme.withAlpha(Theme.onSurface, 0.03)
+
+                                            Rectangle {
+                                                anchors.right: parent.right
+                                                width: 1
+                                                height: parent.height
+                                                color: Theme.outline
+                                                visible: index < parent.parent.colCount - 1
+                                            }
+
+                                            StyledText {
+                                                id: dataCell
+                                                anchors {
+                                                    left: parent.left
+                                                    right: parent.right
+                                                    verticalCenter: parent.verticalCenter
+                                                    leftMargin: Theme.spacingS
+                                                    rightMargin: Theme.spacingS
+                                                }
+                                                text: modelData
+                                                font.pixelSize: Theme.fontSizeMedium
+                                                color: Theme.surfaceText
+                                                wrapMode: Text.Wrap
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Row divider (skip after last row)
+                                Rectangle {
+                                    width: parent.width
+                                    height: 1
+                                    color: Theme.withAlpha(Theme.outline, 0.5)
+                                    visible: index < (segmentData ? segmentData.rows.length - 1 : 0)
+                                }
+                            }
+                        }
                     }
                 }
             }
