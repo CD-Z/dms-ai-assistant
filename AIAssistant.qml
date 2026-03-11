@@ -22,7 +22,6 @@ Item {
             // This avoids stale popup/dropdown internals when reopened.
             showSettingsMenu = false;
             showOverflowMenu = false;
-            showNewChatConfirm = false;
         }
     }
 
@@ -31,7 +30,6 @@ Item {
     property bool historyOpen: false
     property bool showSettingsMenu: false
     property bool showOverflowMenu: false
-    property bool showNewChatConfirm: false
     property string transientHint: ""
     property real nowMs: Date.now()
     readonly property real panelTransparency: SettingsData.popupTransparency
@@ -62,11 +60,8 @@ Item {
         }
 
         if ((aiService.messageCount ?? 0) > 0) {
-            showNewChatConfirm = true;
-            return;
+            aiService.createNewChat();
         }
-
-        aiService.clearHistory(true);
     }
 
     function sendCurrentMessage() {
@@ -335,11 +330,11 @@ Item {
                 Layout.preferredWidth: root.historyOpen ? parent.width * 0.35 : 0
                 Layout.fillHeight: true
 
-                opacity: chatComponentRoot.sidebarOpen ? 1 : 0
+                opacity: root.historyOpen ? 1 : 0
                 radius: Theme.cornerRadius
                 color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, root.panelTransparency)
                 border.color: Theme.surfaceVariantAlpha
-                border.width: chatComponentRoot.sidebarOpen ? 1 : 0
+                border.width: root.historyOpen ? 1 : 0
                 clip: true
                 //visible: root.historyOpen
 
@@ -533,7 +528,7 @@ Item {
             width: 200
             height: menuColumn.height + Theme.spacingM * 2
             radius: Theme.cornerRadius
-            color: Theme.withAlpha(Theme.surfaceContainer, Theme.popupTransparency)
+            color: Theme.surfaceContainer
             border.width: 1
             border.color: Theme.outlineMedium
 
@@ -590,85 +585,6 @@ Item {
                     onClicked: {
                         showOverflowMenu = false;
                         root.hideRequested();
-                    }
-                }
-            }
-        }
-    }
-
-    MouseArea {
-        anchors.fill: parent
-        visible: showNewChatConfirm
-        focus: showNewChatConfirm
-        onVisibleChanged: if (visible)
-            forceActiveFocus()
-        onClicked: showNewChatConfirm = false
-
-        Keys.enabled: showNewChatConfirm
-        Keys.onPressed: event => {
-            if (event.key === Qt.Key_Escape) {
-                showNewChatConfirm = false;
-                event.accepted = true;
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                aiService.clearHistory(true);
-                showNewChatConfirm = false;
-                event.accepted = true;
-            }
-        }
-
-        Rectangle {
-            width: Math.min(parent.width * 0.88, 360)
-            height: confirmColumn.height + Theme.spacingL * 2
-            anchors.centerIn: parent
-            radius: Theme.cornerRadius
-            color: Theme.withAlpha(Theme.surfaceContainer, Theme.popupTransparency)
-            border.width: 1
-            border.color: Theme.outlineMedium
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {}
-            }
-
-            Column {
-                id: confirmColumn
-                width: parent.width - Theme.spacingL * 2
-                anchors.centerIn: parent
-                spacing: Theme.spacingM
-
-                StyledText {
-                    text: I18n.tr("Start a new chat?")
-                    color: Theme.surfaceText
-                    font.pixelSize: Theme.fontSizeLarge
-                    font.weight: Font.Medium
-                    width: parent.width
-                    wrapMode: Text.Wrap
-                }
-
-                StyledText {
-                    text: I18n.tr("This clears the current chat history.")
-                    color: Theme.surfaceTextMedium
-                    font.pixelSize: Theme.fontSizeSmall
-                    width: parent.width
-                    wrapMode: Text.Wrap
-                }
-
-                Row {
-                    spacing: Theme.spacingS
-                    anchors.right: parent.right
-
-                    DankButton {
-                        text: I18n.tr("Cancel")
-                        onClicked: showNewChatConfirm = false
-                    }
-
-                    DankButton {
-                        text: I18n.tr("New chat")
-                        iconName: "keyboard_return"
-                        onClicked: {
-                            aiService.clearHistory(true);
-                            showNewChatConfirm = false;
-                        }
                     }
                 }
             }

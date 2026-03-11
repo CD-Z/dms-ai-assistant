@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Widgets
 import qs.Common
@@ -13,11 +12,6 @@ Item {
     Connections {
         target: root.aiService
     }
-    // Button {
-    //     Layout.fillWidth: true
-    //     text: "＋ New chat"
-    //     onClicked: root.aiService.createNewChat()
-    // }
 
     ListView {
         id: list
@@ -26,9 +20,6 @@ Item {
 
         model: root.aiService.chatsModel
         clip: true
-        Component.onCompleted: {
-            console.info("test");
-        }
 
         delegate: Rectangle {
             id: wrapper
@@ -40,11 +31,6 @@ Item {
             required property int messageCount
             required property string chatId
             required property string name
-
-            // Moved console log to onCompleted for cleaner debugging
-            Component.onCompleted: {
-                console.info(messageCount, isActive, chatId, name);
-            }
 
             RowLayout {
                 implicitHeight: 48
