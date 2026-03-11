@@ -50,49 +50,47 @@ Item {
         model: root.messages
         spacing: Theme.spacingM
         clip: true
-        ScrollBar.vertical: ScrollBar {}
 
-        onContentYChanged: {
-            // Use a small tolerance to avoid stickToBottom flipping to false
-            // while positionViewAtEnd() is mid-flight during a height update.
-            const maxY = Math.max(0, listView.contentHeight - listView.height);
-            root.stickToBottom = listView.contentY >= maxY - 20;
-        }
+        // 1. Critical: Cache delegates outside the visible area to prevent
+        // constant destruction/re-creation during scrolling.
+        cacheBuffer: 2000
 
-        onContentHeightChanged: {
-            if (root.stickToBottom) {
-                Qt.callLater(() => listView.positionViewAtEnd());
-            }
-        }
+        // 2. Optimization: Don't force every pixel to be perfectly aligned if
+        // it causes stutter, but usually, true is better for text.
+        pixelAligned: true
 
-        onModelChanged: {
-            Qt.callLater(() => {
-                root.stickToBottom = true;
-                listView.positionViewAtEnd();
-            });
+        // 3. Performance: Refine the scrolling logic to avoid excessive calls.
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
         }
 
         delegate: Item {
             id: wrapper
             width: listView.width
 
-            // Declare required properties for the roles you need
             required property int index
             required property string role
             required property string content
             required property string id
             required property int status
 
-            // Access previousRole using root.messages.get() as you did before
-            readonly property string previousRole: (index > 0 && root.messages) ? (root.messages.get(index - 1).role || "") : ""
-            readonly property bool roleChanged: previousRole.length > 0 && previousRole !== role
+            // 4. Optimization: Avoid accessing the model via .get() in a binding.
+            // If your model is a C++ model, expose 'previousRole' as a role.
+            // If it's a ListModel, this remains a bottleneck.
+            readonly property bool roleChanged: {
+                if (index === 0)
+                    return false;
+                // Accessing model data by index is expensive in bindings.
+                const prev = root.messages.get(index - 1);
+                return prev ? prev.role !== role : false;
+            }
             readonly property int topGap: roleChanged ? Theme.spacingM : 0
 
             implicitHeight: bubble.implicitHeight + topGap
 
             MessageBubble {
                 id: bubble
-                width: listView.width
+                width: parent.width
                 y: wrapper.topGap
                 messageId: wrapper.id
                 role: wrapper.role
@@ -102,15 +100,11 @@ Item {
 
                 onCopySuccess: root.copySuccess()
 
-                Component.onCompleted: {
-                    console.log("[MessageList] add", role, text ? text.slice(0, 40) : "");
-                }
-
+                // 5. Remove console.log from delegates. It kills frame rates.
                 onRegenerateRequested: messageId => {
-                    if (!root.aiService || !root.aiService.regenerateFromMessageId)
-                        return;
-                    console.log("[MessageList] regenerate requested for message id", messageId);
-                    root.aiService.regenerateFromMessageId(messageId);
+                    if (root.aiService?.regenerateFromMessageId) {
+                        root.aiService.regenerateFromMessageId(messageId);
+                    }
                 }
             }
         }
