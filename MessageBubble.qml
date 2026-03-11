@@ -3,8 +3,8 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
 import qs.Common
-import aiAssistan.markdown
 import qs.Widgets
+import "./markdown"
 
 Item {
     id: root
