@@ -6,36 +6,35 @@ import qs.Common
 Item {
     id: root
     clip: true
-    property var messages: null // expects a ListModel
+    property var messages: null
     property var aiService: null
     property bool stickToBottom: true
     property bool useMonospace: false
     signal copySuccess
 
-    Component.onCompleted: console.log("[MessageList] ready")
-
-    // Scroll to bottom when a new message is appended.
     Connections {
         target: root.messages
         function onCountChanged() {
-            if (root.stickToBottom) {
+            // Only react to single-message appends (streaming + user sends).
+            // Bulk loads are handled by onMessagesReplaced below.
+            if (root.stickToBottom && root.messages.count > 0)
                 Qt.callLater(() => listView.positionViewAtEnd());
-            }
         }
     }
 
-    // Scroll to bottom when streaming ends so the fully-rendered markdown
-    // (which can be significantly taller than the streaming plain text) is visible.
     Connections {
         target: root.aiService
         function onIsStreamingChanged() {
-            if (root.aiService && !root.aiService.isStreaming) {
+            if (root.aiService && !root.aiService.isStreaming)
                 scrollSettleTimer.restart();
-            }
+        }
+        function onMessagesReplaced() {
+            // After a chat switch or load, jump immediately.
+            root.stickToBottom = true;
+            Qt.callLater(() => listView.positionViewAtEnd());
         }
     }
 
-    // Give the markdown layout two frames to settle before scrolling.
     Timer {
         id: scrollSettleTimer
         interval: 32
@@ -51,17 +50,43 @@ Item {
         spacing: Theme.spacingM
         clip: true
 
-        // 1. Critical: Cache delegates outside the visible area to prevent
-        // constant destruction/re-creation during scrolling.
-        cacheBuffer: 2000
+        // Reuse delegate Item instances instead of destroy/recreate.
+        // Biggest single win for a chat list with heavy delegates.
+        // MessageBubble must handle property resets cleanly (it does,
+        // since all its content is driven by bound properties).
+        reuseItems: true
 
-        // 2. Optimization: Don't force every pixel to be perfectly aligned if
-        // it causes stutter, but usually, true is better for text.
+        // Keep ~3 screens worth of delegates alive above and below.
+        // Avoids re-parsing markdown on fast scrolls.
+        cacheBuffer: height > 0 ? height * 5 : 2000
+
+        // Pre-render slightly outside the visible rect to reduce
+        // blank flashes when flinging quickly.
+        displayMarginBeginning: 64
+        displayMarginEnd: 64
+
         pixelAligned: true
 
-        // 3. Performance: Refine the scrolling logic to avoid excessive calls.
         ScrollBar.vertical: ScrollBar {
             policy: ScrollBar.AsNeeded
+        }
+
+        // Restore stickToBottom tracking.
+        onContentYChanged: {
+            const maxY = Math.max(0, contentHeight - height);
+            root.stickToBottom = contentY >= maxY - 20;
+        }
+
+        onContentHeightChanged: {
+            if (root.stickToBottom)
+                Qt.callLater(() => positionViewAtEnd());
+        }
+
+        onModelChanged: {
+            Qt.callLater(() => {
+                root.stickToBottom = true;
+                positionViewAtEnd();
+            });
         }
 
         delegate: Item {
@@ -74,19 +99,32 @@ Item {
             required property string id
             required property int status
 
-            // 4. Optimization: Avoid accessing the model via .get() in a binding.
-            // If your model is a C++ model, expose 'previousRole' as a role.
-            // If it's a ListModel, this remains a bottleneck.
-            readonly property bool roleChanged: {
-                if (index === 0)
-                    return false;
-                // Accessing model data by index is expensive in bindings.
-                const prev = root.messages.get(index - 1);
-                return prev ? prev.role !== role : false;
-            }
+            // Expose previousRole as a model role instead of calling
+            // messages.get() in a binding. Add it when you append to
+            // the model:
+            //   messages.append({
+            //     ...,
+            //     previousRole: messages.count > 0
+            //       ? messages.get(messages.count - 1).role
+            //       : ""
+            //   })
+            //
+            // Then declare it here:
+            required property string previousRole
+
+            readonly property bool roleChanged: previousRole.length > 0 && previousRole !== role
             readonly property int topGap: roleChanged ? Theme.spacingM : 0
 
             implicitHeight: bubble.implicitHeight + topGap
+
+            // Reset state when the delegate is reused for a different
+            // model index (required when reuseItems: true).
+            ListView.onReused: {
+                // Properties are already rebound by the required
+                // property system — nothing extra needed unless
+                // MessageBubble has internal animation state you
+                // want to reset.
+            }
 
             MessageBubble {
                 id: bubble
@@ -100,11 +138,9 @@ Item {
 
                 onCopySuccess: root.copySuccess()
 
-                // 5. Remove console.log from delegates. It kills frame rates.
                 onRegenerateRequested: messageId => {
-                    if (root.aiService?.regenerateFromMessageId) {
+                    if (root.aiService?.regenerateFromMessageId)
                         root.aiService.regenerateFromMessageId(messageId);
-                    }
                 }
             }
         }

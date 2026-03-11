@@ -243,13 +243,12 @@ Item {
                         id: codeColumn
                         width: parent.width
 
-                        // Language + copy header
+                        // Header: Language + Copy Button
                         Rectangle {
                             width: parent.width
                             height: langLabel.implicitHeight + Theme.spacingXS * 2
                             color: Theme.withAlpha(Theme.onSurface, 0.06)
                             radius: Theme.cornerRadius
-                            // Square bottom corners
                             Rectangle {
                                 anchors.bottom: parent.bottom
                                 width: parent.width
@@ -265,7 +264,6 @@ Item {
                                     leftMargin: Theme.spacingS
                                     rightMargin: Theme.spacingS
                                 }
-
                                 StyledText {
                                     id: langLabel
                                     text: segmentData ? segmentData.lang : ""
@@ -273,14 +271,12 @@ Item {
                                     color: Theme.surfaceVariantText
                                     Layout.fillWidth: true
                                 }
-
                                 DankActionButton {
                                     iconName: "content_copy"
                                     buttonSize: 20
                                     iconSize: 12
                                     backgroundColor: "transparent"
                                     iconColor: Theme.surfaceVariantText
-                                    tooltipText: I18n.tr("Copy")
                                     onClicked: {
                                         if (segmentData) {
                                             Quickshell.execDetached(["wl-copy", segmentData.content]);
@@ -291,25 +287,43 @@ Item {
                             }
                         }
 
-                        TextArea {
+                        // Code Container
+                        Flickable {
+                            id: codeFlicker
                             width: parent.width
-                            text: segmentData ? segmentData.content : ""
-                            textFormat: Text.PlainText
-                            wrapMode: Text.NoWrap  // horizontal scroll for code
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.family: Theme.monoFontFamily
-                            color: Theme.surfaceText
-                            readOnly: true
-                            selectByMouse: true
-                            selectionColor: Theme.primary
-                            selectedTextColor: Theme.onPrimary
-                            background: null
-                            leftPadding: Theme.spacingS
-                            rightPadding: Theme.spacingS
-                            topPadding: Theme.spacingS
-                            bottomPadding: Theme.spacingS
+                            // Force the Flickable to be exactly as tall as the text
+                            height: codeTextArea.implicitHeight
+                            contentWidth: codeTextArea.implicitWidth
+                            contentHeight: codeTextArea.implicitHeight
 
-                            ScrollBar.horizontal: ScrollBar {}
+                            // This property belongs to Flickable, not ScrollView
+                            flickableDirection: Flickable.HorizontalFlick
+                            boundsBehavior: Flickable.StopAtBounds
+                            clip: true
+
+                            TextArea {
+                                id: codeTextArea
+                                text: segmentData ? segmentData.content : ""
+                                textFormat: Text.PlainText
+                                wrapMode: Text.NoWrap
+                                font.pixelSize: Theme.fontSizeMedium
+                                font.family: Theme.monoFontFamily
+                                color: Theme.surfaceText
+                                readOnly: true
+                                selectByMouse: true
+                                selectionColor: Theme.primary
+                                selectedTextColor: Theme.onPrimary
+                                background: null
+                                leftPadding: Theme.spacingS
+                                rightPadding: Theme.spacingS
+                                topPadding: Theme.spacingS
+                                bottomPadding: Theme.spacingS
+                            }
+
+                            ScrollBar.horizontal: ScrollBar {
+                                active: codeFlicker.moving
+                                policy: ScrollBar.AsNeeded
+                            }
                         }
                     }
                 }

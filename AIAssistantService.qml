@@ -32,6 +32,7 @@ Item {
     property bool isStreaming: false
     property bool isOnline: false
     property string activeStreamId: ""
+    property int activeStreamIndex: -1
     property real streamStartedAtMs: 0
     property string lastUserText: ""
     property int lastHttpStatus: 0
@@ -55,6 +56,8 @@ Item {
     onProviderChanged: handleConfigChanged()
     onBaseUrlChanged: handleConfigChanged()
     onModelChanged: handleConfigChanged()
+
+    signal messagesReplaced  // emitted after loadMessages completes
 
     // ── Provider defaults ──────────────────────────────────────────
 
@@ -597,10 +600,12 @@ Item {
                 content: m.content,
                 timestamp: m.timestamp || Date.now(),
                 id: m.id || m.role + "-" + Date.now() + "-" + i,
-                status: m.status || "ok"
+                status: m.status || "ok",
+                previousRole: i > 0 ? msgs[i - 1].role : ""
             });
         }
         lastUserText = findLastUserText();
+        messagesReplaced();
     }
 
     function saveSession() {
@@ -732,27 +737,31 @@ Item {
         const streamId = "assistant-" + now;
 
         if (addUser) {
+            const prevRole = messagesModel.count > 0 ? messagesModel.get(messagesModel.count - 1).role : "";
             messagesModel.append({
                 role: "user",
                 content: text,
                 timestamp: now,
                 id: "user-" + now,
-                status: "ok"
+                status: "ok",
+                previousRole: prevRole
             });
             lastUserText = text;
-
-            // Auto-name the chat from the first user
-            // message if still "New chat"
             autoNameCurrentChat(text);
         }
 
+        const prevRole = messagesModel.count > 0 ? messagesModel.get(messagesModel.count - 1).role : "";
         messagesModel.append({
             role: "assistant",
             content: "",
             timestamp: now + 1,
             id: streamId,
-            status: "streaming"
+            status: "streaming",
+            previousRole: prevRole
         });
+
+        // Cache the index directly — it's always the last item at append time
+        activeStreamIndex = messagesModel.count - 1;
         activeStreamId = streamId;
         isStreaming = true;
         streamStartedAtMs = now;
@@ -760,7 +769,6 @@ Item {
 
         const payload = buildPayload(text);
         const curlCmd = buildCurlCommand(payload);
-        console.info(curlCmd);
         if (!curlCmd) {
             markError(streamId, "No API key or provider configuration.");
             return;
@@ -804,14 +812,28 @@ Item {
         return -1;
     }
 
+    function finalizeStream(streamId) {
+        if (activeStreamIndex >= 0 && activeStreamIndex < messagesModel.count) {
+            messagesModel.setProperty(activeStreamIndex, "status", "ok");
+        }
+        isStreaming = false;
+        activeStreamId = "";
+        activeStreamIndex = -1;  // invalidate cache
+        streamStartedAtMs = 0;
+        isOnline = true;
+        saveSession();
+        refreshChatsModel();
+    }
+
     function markError(streamId, message) {
-        const idx = findIndexById(streamId);
+        const idx = activeStreamIndex >= 0 ? activeStreamIndex : findIndexById(streamId);  // fallback for non-streaming errors
         if (idx >= 0) {
             messagesModel.setProperty(idx, "content", message);
             messagesModel.setProperty(idx, "status", "error");
         }
         isStreaming = false;
         activeStreamId = "";
+        activeStreamIndex = -1;
         streamStartedAtMs = 0;
         saveSession();
     }
@@ -819,11 +841,10 @@ Item {
     function updateStreamContent(streamId, deltaText) {
         if (!deltaText)
             return;
-        const idx = findIndexById(streamId);
-        if (idx >= 0) {
-            const cur = messagesModel.get(idx).content || "";
-            messagesModel.setProperty(idx, "content", cur + deltaText);
-            messagesModel.setProperty(idx, "status", "streaming");
+        // Use cached index — no O(n) scan
+        if (activeStreamIndex >= 0 && activeStreamIndex < messagesModel.count) {
+            const cur = messagesModel.get(activeStreamIndex).content || "";
+            messagesModel.setProperty(activeStreamIndex, "content", cur + deltaText);
         }
     }
 
@@ -839,24 +860,6 @@ Item {
         if (idx >= 0) {
             messagesModel.setProperty(idx, "content", text || "");
         }
-    }
-
-    function finalizeStream(streamId) {
-        const idx = findIndexById(streamId);
-        if (idx >= 0) {
-            messagesModel.setProperty(idx, "status", "ok");
-        }
-        isStreaming = false;
-        activeStreamId = "";
-        streamStartedAtMs = 0;
-        isOnline = true;
-        if (debugEnabled) {
-            const text = getMessageContentById(streamId);
-            const preview = (text || "").replace(/\s+/g, " ").slice(0, 300);
-            console.log("[AIAssistantService] response finalized" + " chars=", (text || "").length, "preview=", preview);
-        }
-        saveSession();
-        refreshChatsModel();
     }
 
     // ── Payload / curl ─────────────────────────────────────────────
